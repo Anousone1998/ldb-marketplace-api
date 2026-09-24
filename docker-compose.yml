@@ -1,0 +1,72 @@
+services:
+  api:
+    networks:
+      app-network:
+        # Must match the Public Hostname service in the Cloudflare dashboard: http://nest-api:3000
+        aliases:
+          - nest-api
+    build:
+      context: .
+      target: runtime
+    image: corporate-marketplace-api:latest
+    container_name: corporate-marketplace-api
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      # Requests arrive via cloudflared; trust X-Forwarded-For so rate limits see real client IPs.
+      TRUST_PROXY: "true"
+    ports:
+      - "${HOST_PORT:-3000}:3000"
+    restart: unless-stopped
+    stop_grace_period: 30s
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ─── Service 2: Cloudflare Quick Tunnel (no domain / account needed) ───────
+  # Publishes the API at a random https://<name>.trycloudflare.com URL (REST + Socket.io).
+  # The URL changes every time this container is recreated.
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflare-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --metrics 0.0.0.0:20241 run
+    environment:
+      - TUNNEL_TOKEN=eyJhIjoiYmRiODA3NjI3MzE0MjVhMjFjYjA1ZDY4ODNmNjA0YmUiLCJ0IjoiMDIzMDBiNWItZDRiZS00MzlmLWE0ZTUtMjZiYjAyMzYzZmY1IiwicyI6Ik1qWXhNV1kxWXpBdFpEUXpZaTAwTlRrNExUazNOREl0T1RjeVlqaGxNVEF6TWpFNCJ9
+    networks:
+      - app-network
+    depends_on:
+      - api
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "cloudflared",
+          "tunnel",
+          "--metrics",
+          "127.0.0.1:20241",
+          "ready",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+networks:
+  app-network:
+    driver: bridge
