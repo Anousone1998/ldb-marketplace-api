@@ -18,6 +18,7 @@ import { flattenValidationErrors } from '../common/utils/validation.util';
 import { ChatsService, conversationRoom, userRoom } from './chats.service';
 import { JoinChatDto, MarkReadDto, peerOf, SendMessageDto } from './dto/chat.dto';
 import { WsExceptionsFilter } from './filters/ws-exceptions.filter';
+import { PeerTokenService } from './peer-token.service';
 
 interface SocketData {
   user: AuthUser;
@@ -35,7 +36,7 @@ type ChatSocket = Socket<Record<string, never>, Record<string, never>, Record<st
  * Connect:   io('<host>/chat', { auth: { token: '<JWT>' } })
  * Client → server (use emitWithAck; acks use the same envelope as the REST API):
  *   { status: 'success', statusCode: 200, message, data } | { status: 'error', statusCode, message, errors?, data: null }
- *   joinChat    { itemId, withUserId? | peerId? }
+ *   joinChat    { itemId, withUserId? | peerId? }   (peer fields accept an employee ID or peerToken)
  *   leaveChat   { itemId, withUserId? | peerId? }
  *   sendMessage { itemId, receiverId, messageText, senderId? }
  *   markRead    { itemId, withUserId? | peerId? }
@@ -67,6 +68,7 @@ export class ChatsGateway implements OnGatewayInit<Namespace>, OnGatewayConnecti
   constructor(
     private readonly chatsService: ChatsService,
     private readonly authService: AuthService,
+    private readonly peerTokens: PeerTokenService,
   ) {}
 
   /** Authenticates during the handshake, before any event handler can run. */
@@ -100,10 +102,10 @@ export class ChatsGateway implements OnGatewayInit<Namespace>, OnGatewayConnecti
   @SubscribeMessage('joinChat')
   async joinChat(@ConnectedSocket() client: ChatSocket, @MessageBody() dto: JoinChatDto) {
     const me = client.data.user.userId;
-    const { itemId, peerId, sellerId } = await this.chatsService.resolveConversation(
+    const { itemId, peerId, peerToken, sellerId } = await this.chatsService.resolveConversation(
       String(dto.itemId),
       me,
-      peerOf(dto),
+      peerOf(dto, this.peerTokens),
     );
 
     const room = conversationRoom(itemId, me, peerId);
@@ -114,13 +116,13 @@ export class ChatsGateway implements OnGatewayInit<Namespace>, OnGatewayConnecti
       this.server.to(room).to(userRoom(peerId)).emit('messagesRead', { itemId, readerId: me, count });
     }
 
-    return wsSuccess('Joined chat', { itemId, peerId, sellerId, room });
+    return wsSuccess('Joined chat', { itemId, peerId, peerToken, sellerId, room });
   }
 
   @SubscribeMessage('leaveChat')
   async leaveChat(@ConnectedSocket() client: ChatSocket, @MessageBody() dto: JoinChatDto) {
     const me = client.data.user.userId;
-    const { itemId, peerId } = await this.chatsService.resolveConversation(String(dto.itemId), me, peerOf(dto));
+    const { itemId, peerId } = await this.chatsService.resolveConversation(String(dto.itemId), me, peerOf(dto, this.peerTokens));
     await client.leave(conversationRoom(itemId, me, peerId));
     return wsSuccess('Left chat', null);
   }
@@ -149,7 +151,7 @@ export class ChatsGateway implements OnGatewayInit<Namespace>, OnGatewayConnecti
   @SubscribeMessage('markRead')
   async markRead(@ConnectedSocket() client: ChatSocket, @MessageBody() dto: MarkReadDto) {
     const me = client.data.user.userId;
-    const { itemId, peerId } = await this.chatsService.resolveConversation(String(dto.itemId), me, peerOf(dto));
+    const { itemId, peerId } = await this.chatsService.resolveConversation(String(dto.itemId), me, peerOf(dto, this.peerTokens));
     const count = await this.chatsService.markAsRead(me, itemId, peerId);
     if (count > 0) this.notifyRead(itemId, me, peerId, count);
     return wsSuccess('Messages marked as read', { count });

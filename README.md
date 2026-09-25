@@ -142,6 +142,7 @@ Rules:
 
 - **Uploads:** JPG, PNG and WEBP only, up to 5 MB each. The file's content is checked, not just its extension. Image URLs sent to the API must come from this app's bucket.
 - **Prices:** FREE items cost 0. Other item types need a price above 0.
+- **Hiding employee IDs in chat URLs:** chat responses include `peerToken`, an encrypted, URL-safe form of `peerId` (for example `/chats/2?peer=<peerToken>`). Any chat field that takes a peer (`withUserId`, `peerId`, `receiverId`) accepts either the token or the plain ID. A given user always gets the same token. Tokens are derived from `JWT_SECRET`, so changing it invalidates old links.
 - **Chat participants:** buyers can omit `withUserId`, since it defaults to the seller. Sellers must pass the buyer's ID. `peerId` is accepted as an alias for `withUserId` in chat queries, bodies and Socket.io events; sending both with different values is rejected.
 
 ## Push notifications (FCM)

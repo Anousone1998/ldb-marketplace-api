@@ -4,11 +4,14 @@ import { Brackets, Repository } from 'typeorm';
 import { PaginatedResult } from '../common/dto/pagination.dto';
 import { Item, Message, User } from '../database/entities';
 import { ChatHistoryQueryDto, peerOf, SendMessageDto } from './dto/chat.dto';
+import { PeerTokenService } from './peer-token.service';
 
 export interface ResolvedConversation {
   itemId: string;
   sellerId: string;
   peerId: string;
+  /** Encrypted peerId for URLs; accepted wherever a peer ID is. */
+  peerToken: string;
 }
 
 export interface ConversationSummary {
@@ -19,6 +22,7 @@ export interface ConversationSummary {
   sellerId: string;
   peerId: string;
   peerName: string;
+  peerToken: string;
   lastMessageId: string;
   lastMessageText: string;
   lastSenderId: string;
@@ -41,13 +45,15 @@ export class ChatsService {
     @InjectRepository(Message) private readonly messagesRepo: Repository<Message>,
     @InjectRepository(Item) private readonly itemsRepo: Repository<Item>,
     @InjectRepository(User) private readonly usersRepo: Repository<User>,
+    private readonly peerTokens: PeerTokenService,
   ) {}
 
   /**
    * Resolves who the current user is talking to about an item.
    * Every conversation is between the item's seller and one other employee.
    */
-  async resolveConversation(itemId: string, userId: string, withUserId?: string): Promise<ResolvedConversation> {
+  async resolveConversation(itemId: string, userId: string, peer?: string): Promise<ResolvedConversation> {
+    const withUserId = this.peerTokens.resolve(peer);
     const item = await this.itemsRepo.findOne({
       where: { itemId },
       select: { itemId: true, sellerId: true },
@@ -68,16 +74,17 @@ export class ChatsService {
       peerId = item.sellerId;
     }
 
-    return { itemId: item.itemId, sellerId: item.sellerId, peerId };
+    return { itemId: item.itemId, sellerId: item.sellerId, peerId, peerToken: this.peerTokens.encode(peerId) };
   }
 
   async createMessage(senderId: string, dto: SendMessageDto): Promise<Message> {
     const itemId = String(dto.itemId);
-    if (dto.receiverId === senderId) {
+    const receiverId = this.peerTokens.resolve(dto.receiverId);
+    if (receiverId === senderId) {
       throw new BadRequestException('You cannot message yourself');
     }
 
-    const conversation = await this.resolveConversation(itemId, senderId, dto.receiverId);
+    const conversation = await this.resolveConversation(itemId, senderId, receiverId);
     const receiverExists = await this.usersRepo.existsBy({ userId: conversation.peerId });
     if (!receiverExists) throw new NotFoundException(`Employee ${conversation.peerId} not found`);
 
@@ -93,7 +100,11 @@ export class ChatsService {
 
   /** Newest-first cursor pagination, returned in chronological order for rendering. */
   async getHistory(userId: string, query: ChatHistoryQueryDto) {
-    const { itemId, peerId } = await this.resolveConversation(String(query.itemId), userId, peerOf(query));
+    const { itemId, peerId, peerToken } = await this.resolveConversation(
+      String(query.itemId),
+      userId,
+      peerOf(query, this.peerTokens),
+    );
 
     const qb = this.messagesRepo
       .createQueryBuilder('m')
@@ -121,6 +132,7 @@ export class ChatsService {
     return new PaginatedResult(page, {
       itemId,
       peerId,
+      peerToken,
       hasMore,
       nextBeforeId: hasMore && page.length > 0 ? page[0].messageId : null,
     });
@@ -181,7 +193,10 @@ export class ChatsService {
     );
 
     const total = rows.length > 0 ? (rows[0] as ConversationSummary & { totalCount: number }).totalCount : 0;
-    const data = rows.map(({ totalCount: _omit, ...row }: ConversationSummary & { totalCount?: number }) => row);
+    const data = rows.map(({ totalCount: _omit, ...row }: ConversationSummary & { totalCount?: number }) => ({
+      ...row,
+      peerToken: this.peerTokens.encode(row.peerId),
+    }));
 
     return new PaginatedResult(data, { page, size, total, totalPages: Math.ceil(total / size) });
   }

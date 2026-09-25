@@ -18,6 +18,9 @@ services:
       TRUST_PROXY: "true"
     ports:
       - "${HOST_PORT:-3000}:3000"
+    volumes:
+      # FCM credentials (excluded from the image by .dockerignore); read by FIREBASE_SERVICE_ACCOUNT_PATH.
+      - ./firebase-service-account.json:/app/firebase-service-account.json:ro
     restart: unless-stopped
     stop_grace_period: 30s
     read_only: true

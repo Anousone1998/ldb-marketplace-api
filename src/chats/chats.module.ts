@@ -5,11 +5,12 @@ import { Item, Message, User } from '../database/entities';
 import { ChatsController } from './chats.controller';
 import { ChatsGateway } from './chats.gateway';
 import { ChatsService } from './chats.service';
+import { PeerTokenService } from './peer-token.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Message, Item, User]), AuthModule],
   controllers: [ChatsController],
-  providers: [ChatsService, ChatsGateway],
-  exports: [ChatsGateway],
+  providers: [ChatsService, ChatsGateway, PeerTokenService],
+  exports: [ChatsGateway, PeerTokenService],
 })
 export class ChatsModule {}

@@ -3,6 +3,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { ChatsGateway } from './chats.gateway';
 import { ChatsService } from './chats.service';
 import { ChatHistoryQueryDto, ConversationsQueryDto, MarkReadDto, peerOf } from './dto/chat.dto';
+import { PeerTokenService } from './peer-token.service';
 import { ResponseMessage } from '../common/decorators/response-message.decorator';
 
 @Controller('chats')
@@ -10,6 +11,7 @@ export class ChatsController {
   constructor(
     private readonly chatsService: ChatsService,
     private readonly chatsGateway: ChatsGateway,
+    private readonly peerTokens: PeerTokenService,
   ) {}
 
   /**
@@ -35,7 +37,7 @@ export class ChatsController {
     const { itemId, peerId } = await this.chatsService.resolveConversation(
       String(dto.itemId),
       userId,
-      peerOf(dto),
+      peerOf(dto, this.peerTokens),
     );
     const count = await this.chatsService.markAsRead(userId, itemId, peerId);
     if (count > 0) this.chatsGateway.notifyRead(itemId, userId, peerId, count);
