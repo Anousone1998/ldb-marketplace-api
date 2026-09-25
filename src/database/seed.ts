@@ -73,6 +73,7 @@ const SEED_ITEMS: DeepPartial<Item>[] = [
       'Fresh rice noodle soup with chicken, made the same morning. Order by Thursday 3 PM, ' +
       'pickup Friday 11:45 AM. Price per bowl, container included.',
     price: 35_000,
+    quantity: 20,
     itemType: ItemType.FOOD,
     status: ItemStatus.AVAILABLE,
     pickupLocation: 'HQ Building A, Ground Floor - Staff Canteen',
@@ -83,6 +84,7 @@ const SEED_ITEMS: DeepPartial<Item>[] = [
     title: 'Banana Cake & Coconut Sticky Rice Set - Pre-order',
     description: 'Box of 6 banana cakes + 4 coconut sticky rice. Baked fresh on Wednesday, pickup after 4 PM.',
     price: 60_000,
+    quantity: 10,
     itemType: ItemType.FOOD,
     status: ItemStatus.AVAILABLE,
     pickupLocation: 'HQ Building A, 3rd Floor - HR Pantry',
@@ -115,7 +117,7 @@ async function run(): Promise<void> {
 
     await AppDataSource.transaction(async (manager) => {
       if (clean) {
-        await manager.query('TRUNCATE TABLE "messages", "orders", "items", "users" RESTART IDENTITY CASCADE');
+        await manager.query('TRUNCATE TABLE "notifications", "messages", "orders", "items", "users" RESTART IDENTITY CASCADE');
         console.log('✔ Cleaned tables: messages, orders, items, users');
       }
 

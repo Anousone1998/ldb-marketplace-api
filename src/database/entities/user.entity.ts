@@ -1,6 +1,7 @@
-import { Column, CreateDateColumn, Entity, PrimaryColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, Index, PrimaryColumn } from 'typeorm';
 
 @Entity({ name: 'users' })
+@Index('UQ_users_fcm_token', ['fcmToken'], { unique: true })
 export class User {
   @PrimaryColumn({
     name: 'user_id',
@@ -21,6 +22,10 @@ export class User {
 
   @Column({ name: 'qr_payment_url', type: 'text', nullable: true })
   qrPaymentUrl: string | null;
+
+  /** Firebase Cloud Messaging device token. Never returned by default (`select: false`). */
+  @Column({ name: 'fcm_token', type: 'text', nullable: true, select: false })
+  fcmToken?: string | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

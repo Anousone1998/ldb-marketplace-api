@@ -9,6 +9,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
+import WebSocket from 'ws';
 import { EnvironmentVariables } from '../config/env.validation';
 import {
   ALLOWED_IMAGE_TYPES,
@@ -37,6 +38,8 @@ export class StorageService implements OnModuleInit {
     this.bucket = config.get('SUPABASE_BUCKET_NAME', { infer: true });
     this.client = createClient(supabaseUrl, config.get('SUPABASE_SERVICE_ROLE_KEY', { infer: true }), {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      // Node < 22 has no global WebSocket; realtime-js throws at construction without one.
+      realtime: { transport: WebSocket as never },
     });
     this.publicUrlPrefix = `${supabaseUrl}/storage/v1/object/public/${this.bucket}/`;
   }

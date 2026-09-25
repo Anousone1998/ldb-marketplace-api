@@ -7,7 +7,7 @@ export class CreateOrderDto {
   @Min(1)
   itemId: number;
 
-  /** Only FOOD pre-orders may request more than 1 unit. */
+  /** Cannot exceed the item's quantity in stock. */
   @IsOptional()
   @Type(() => Number)
   @IsInt()

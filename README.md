@@ -1,6 +1,6 @@
 # Internal Corporate Marketplace API
 
-Backend for an employee-to-employee marketplace (second-hand goods, food pre-orders, free items), built with NestJS 11, TypeORM, Supabase Postgres and Storage, and Socket.io.
+Backend for an employee-to-employee marketplace (second-hand goods, food pre-orders, household goods, free items), built with NestJS 11, TypeORM, Supabase Postgres and Storage, and Socket.io.
 
 ## Quick start
 
@@ -118,25 +118,39 @@ Employees log in with their employee ID and the phone number stored for them in 
 | `POST /storage/image?folder=items` | Upload one image (multipart field `file`) |
 | `POST /storage/images?folder=items` | Upload up to 10 images (field `files`). Returns `{ urls, files }` |
 | `GET /items?q=&itemType=&status=&sellerId=&page=1&size=20` | Search and filter. By default SOLD items are hidden. |
-| `POST /items` | `{ title, description?, price?, itemType, pickupLocation, images? }` |
+| `POST /items` | `{ title, description?, price?, quantity?, itemType, pickupLocation, images? }`. `quantity` is units in stock (default 1). |
 | `GET /items/:id` | Item detail, including the seller's contact and payment QR |
 | `PATCH /items/:id/status` | `{ status: AVAILABLE \| RESERVED \| SOLD }`. Seller only. Blocked while an order is pending. |
-| `POST /orders` | `{ itemId, quantity? }`. Locks the item (`SELECT … FOR UPDATE`) and sets it to RESERVED. |
+| `POST /orders` | `{ itemId, quantity? }`. `quantity` cannot exceed the item's stock. Locks the item (`SELECT … FOR UPDATE`) and sets it to RESERVED. |
 | `GET /orders?role=buyer\|seller&status=` | My orders |
 | `GET /orders/:id` | Order detail. Only the buyer and seller can see it. |
-| `PATCH /orders/:id/status` | `{ status: COMPLETED }` (seller) sets the item to SOLD. `{ status: CANCELLED }` (buyer or seller) sets it back to AVAILABLE. |
+| `PATCH /orders/:id/status` | `{ status: COMPLETED }` (seller) reduces the item's stock by the order quantity; the item becomes SOLD at 0, otherwise AVAILABLE. `{ status: CANCELLED }` (buyer or seller) sets it back to AVAILABLE. |
 | `PATCH /orders/:id/payment-slip` | `{ paymentSlipUrl }`. Buyer only. |
+| `GET /notifications?unreadOnly=&page=1&size=20` | My notifications, newest first |
+| `GET /notifications/unread-count` | `{ count }` for badges |
+| `PATCH /notifications/:id/read` | Mark one as read |
+| `PATCH /notifications/read-all` | Mark all as read. Returns `{ count }` |
 | `GET /chats/history?itemId=&withUserId=&limit=50&beforeId=` | Conversation messages, oldest first, paginated with a cursor |
 | `GET /chats/conversations` | Inbox: last message and unread count per conversation |
 | `PATCH /chats/read` | `{ itemId, withUserId? }`. Marks the peer's messages as read. |
 | `GET /users/me`, `PATCH /users/me`, `GET /users/:id` | Profile (`phoneNumber`, `qrPaymentUrl`) |
+| `PATCH /users/me/fcm-token` | `{ fcmToken }`. Saves this device's Firebase push token; send after login and on token refresh. The token moves off any other employee who used it before. |
+| `DELETE /users/me/fcm-token` | Removes the token. Call on logout. |
 | `GET /health` | Liveness check plus a database ping |
 
 Rules:
 
 - **Uploads:** JPG, PNG and WEBP only, up to 5 MB each. The file's content is checked, not just its extension. Image URLs sent to the API must come from this app's bucket.
-- **Prices:** FREE items cost 0. Other item types need a price above 0. Only FOOD orders can have `quantity > 1`.
+- **Prices:** FREE items cost 0. Other item types need a price above 0.
 - **Chat participants:** buyers can omit `withUserId`, since it defaults to the seller. Sellers must pass the buyer's ID. `peerId` is accepted as an alias for `withUserId` in chat queries, bodies and Socket.io events; sending both with different values is rejected.
+
+## Push notifications (FCM)
+
+Firebase is used **only** for Cloud Messaging, which is free. The app doesn't use Firestore, Firebase Storage or any other paid Firebase service.
+
+- Set `FIREBASE_SERVICE_ACCOUNT_PATH=./firebase-service-account.json` or put the JSON inline in `FIREBASE_SERVICE_ACCOUNT_JSON` (easier for Docker, because the key file is excluded from the image). If neither is set, push is turned off and notifications still go out over Socket.io.
+- The app sends a device's token with `PATCH /users/me/fcm-token`. Every notification (see `/notifications`) is also pushed to that token, with `data: { notificationId, type, itemId, orderId }`.
+- Tokens that FCM rejects as expired or unregistered are removed automatically.
 
 ## Socket.io: namespace `/chat`
 
@@ -157,6 +171,7 @@ const res = await socket.emitWithAck('sendMessage', {
 ```
 
 - Each socket joins its own `user:<id>` room when it connects. `newMessage` goes to the conversation room and to both participants' user rooms, so the receiver gets it even without opening the chat.
+- Order notifications are pushed to the recipient's `user:<id>` room as `notification` (a Notification row). Marking them read emits `notificationsRead` `{ notificationId | null, unreadCount }` so other tabs and devices update their badges.
 - `senderId` is always taken from the token. If a payload includes a different `senderId`, it is rejected.
 - To run more than one app instance, add `@socket.io/redis-adapter` in `src/common/adapters/socket-io.adapter.ts`.
 

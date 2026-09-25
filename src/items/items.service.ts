@@ -84,6 +84,7 @@ export class ItemsService {
       title: dto.title,
       description: dto.description || null,
       price,
+      quantity: dto.quantity ?? 1,
       itemType: dto.itemType,
       status: ItemStatus.AVAILABLE,
       pickupLocation: dto.pickupLocation,

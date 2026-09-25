@@ -3,6 +3,7 @@ import {
   ArrayMaxSize,
   IsArray,
   IsEnum,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
@@ -28,13 +29,21 @@ export class CreateItemDto {
   @MaxLength(5000)
   description?: string;
 
-  /** Required (> 0) for SECOND_HAND and FOOD; must be omitted or 0 for FREE. */
+  /** Required (> 0) for SECOND_HAND, FOOD and HOUSEHOLD; must be omitted or 0 for FREE. */
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2, allowNaN: false, allowInfinity: false })
   @Min(0)
   @Max(9_999_999_999.99)
   price?: number;
+
+  /** Units in stock (default 1). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(10_000)
+  quantity?: number;
 
   @IsEnum(ItemType)
   itemType: ItemType;

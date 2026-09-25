@@ -9,3 +9,6 @@ coverage/
 npm-debug.log*
 .idea/
 .vscode/
+
+# Firebase Admin credentials (secret)
+firebase-service-account*.json

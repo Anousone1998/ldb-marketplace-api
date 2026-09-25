@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Not, Repository } from 'typeorm';
 import { AuthUser } from '../auth/interfaces/auth-user.interface';
 import { User } from '../database/entities';
 import { StorageService } from '../storage/storage.service';
@@ -52,6 +52,34 @@ export class UsersService {
     if (dto.qrPaymentUrl !== undefined) user.qrPaymentUrl = dto.qrPaymentUrl;
 
     return this.usersRepo.save(user);
+  }
+
+  /**
+   * Saves the device's FCM token for this employee. If another employee signed in on the same
+   * device before, the token is moved so notifications never reach the previous account.
+   */
+  async updateFcmToken(userId: string, fcmToken: string): Promise<{ updated: true }> {
+    await this.usersRepo.manager.transaction(async (manager) => {
+      const repo = manager.getRepository(User);
+      const exists = await repo.exists({ where: { userId } });
+      if (!exists) throw new NotFoundException(`Employee ${userId} not found`);
+
+      await repo.update({ fcmToken, userId: Not(userId) }, { fcmToken: null });
+      await repo.update({ userId }, { fcmToken });
+    });
+    return { updated: true };
+  }
+
+  /** Call on logout so the device stops receiving this employee's notifications. */
+  async clearFcmToken(userId: string): Promise<{ cleared: true }> {
+    await this.usersRepo.update({ userId }, { fcmToken: null });
+    return { cleared: true };
+  }
+
+  /** For push senders; the column is excluded from normal reads. */
+  async getFcmToken(userId: string): Promise<string | null> {
+    const row = await this.usersRepo.findOne({ where: { userId }, select: { userId: true, fcmToken: true } });
+    return row?.fcmToken ?? null;
   }
 
   /** Resolves the employee behind a verified token; null if the account was deleted. */

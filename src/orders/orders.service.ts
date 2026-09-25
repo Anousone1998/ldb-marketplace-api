@@ -8,10 +8,11 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, DataSource, EntityManager, Repository } from 'typeorm';
 import { paginate, PaginatedResult } from '../common/dto/pagination.dto';
-import { ItemStatus, ItemType, OrderStatus } from '../common/enums';
+import { ItemStatus, OrderStatus } from '../common/enums';
 import { multiplyMoney } from '../common/utils/money.util';
 import { isPgError, PgErrorCode } from '../common/utils/sql.util';
 import { Item, Order } from '../database/entities';
+import { NotificationsService } from '../notifications/notifications.service';
 import { StorageService } from '../storage/storage.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { ListOrdersQueryDto } from './dto/list-orders-query.dto';
@@ -25,6 +26,7 @@ export class OrdersService {
     @InjectRepository(Order) private readonly ordersRepo: Repository<Order>,
     private readonly dataSource: DataSource,
     private readonly storage: StorageService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /**
@@ -51,8 +53,8 @@ export class OrdersService {
         }
 
         const quantity = dto.quantity ?? 1;
-        if (quantity > 1 && item.itemType !== ItemType.FOOD) {
-          throw new BadRequestException('Only FOOD pre-orders can have a quantity greater than 1');
+        if (quantity > item.quantity) {
+          throw new BadRequestException(`Only ${item.quantity} unit(s) in stock`);
         }
 
         const order = manager.create(Order, {
@@ -77,11 +79,13 @@ export class OrdersService {
       throw err;
     }
 
-    return this.findOneForUser(orderId, buyerId);
+    const order = await this.findOneForUser(orderId, buyerId);
+    await this.notifications.notifyOrderPlaced(order);
+    return order;
   }
 
   /**
-   * - COMPLETED: seller only → item becomes SOLD
+   * - COMPLETED: seller only → stock is reduced; item becomes SOLD at 0, otherwise AVAILABLE again
    * - CANCELLED: buyer or seller → item goes back to AVAILABLE
    * Locks are taken item-first, the same order as create(), to avoid deadlocks.
    */
@@ -121,7 +125,12 @@ export class OrdersService {
           throw new ForbiddenException('Only the seller can mark an order as completed');
         }
         await manager.update(Order, { orderId }, { status: OrderStatus.COMPLETED });
-        await manager.update(Item, { itemId: item.itemId }, { status: ItemStatus.SOLD });
+        const remaining = Math.max(item.quantity - order.quantity, 0);
+        await manager.update(
+          Item,
+          { itemId: item.itemId },
+          { quantity: remaining, status: remaining > 0 ? ItemStatus.AVAILABLE : ItemStatus.SOLD },
+        );
       } else {
         await manager.update(Order, { orderId }, { status: OrderStatus.CANCELLED });
         if (item.status === ItemStatus.RESERVED) {
@@ -130,7 +139,9 @@ export class OrdersService {
       }
     });
 
-    return this.findOneForUser(orderId, userId);
+    const order = await this.findOneForUser(orderId, userId);
+    await this.notifications.notifyOrderStatusChanged(order, userId);
+    return order;
   }
 
   /** Buyer attaches proof of payment (image uploaded to storage beforehand). */
@@ -149,7 +160,9 @@ export class OrdersService {
     }
 
     await this.ordersRepo.update({ orderId }, { paymentSlipUrl });
-    return this.findOneForUser(orderId, userId);
+    const updated = await this.findOneForUser(orderId, userId);
+    await this.notifications.notifyPaymentSlipAttached(updated);
+    return updated;
   }
 
   async findMine(userId: string, query: ListOrdersQueryDto): Promise<PaginatedResult<Order>> {
@@ -193,7 +206,7 @@ export class OrdersService {
     return this.ordersRepo
       .createQueryBuilder('ord')
       .leftJoin('ord.item', 'item')
-      .addSelect(['item.itemId', 'item.title', 'item.itemType', 'item.status', 'item.images', 'item.pickupLocation'])
+      .addSelect(['item.itemId', 'item.title', 'item.itemType', 'item.status', 'item.quantity', 'item.images', 'item.pickupLocation'])
       .leftJoin('ord.buyer', 'buyer')
       .addSelect(['buyer.userId', 'buyer.fullName', 'buyer.department', 'buyer.phoneNumber'])
       .leftJoin('ord.seller', 'seller')

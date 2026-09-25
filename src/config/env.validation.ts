@@ -100,6 +100,18 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   JWT_ISSUER?: string;
+
+  /** Path to the Firebase service account JSON, used for FCM push only. */
+  @Transform(emptyToUndefined)
+  @IsOptional()
+  @IsString()
+  FIREBASE_SERVICE_ACCOUNT_PATH?: string;
+
+  /** Alternative to the path: the service account JSON inline (e.g. for Docker/hosting env vars). */
+  @Transform(emptyToUndefined)
+  @IsOptional()
+  @IsString()
+  FIREBASE_SERVICE_ACCOUNT_JSON?: string;
 }
 
 export function validateEnv(config: Record<string, unknown>): EnvironmentVariables {
